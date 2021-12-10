@@ -30,3 +30,4 @@ override.tf.json
 
 tokens.tfvars
 ansible/inventory
+ansible/ansible.cfg
