@@ -1,0 +1,280 @@
+---
+- hosts: all
+
+  vars:
+    - country_name: "CH"
+    - email_address: "contact@spofibo.com"
+    - organization_name: "Spofibo"
+    - common_name: "spofibo.com"
+
+  pre_tasks:
+    - name: Update apt-get repo and cache
+      apt: update_cache=yes force_apt_get=yes cache_valid_time=3600
+      tags: [system]
+
+    - name: Upgrade all apt packages
+      apt: upgrade=dist force_apt_get=yes
+      tags: [system]
+
+    - name: Check if a reboot is needed for Debian and Ubuntu boxes
+      register: reboot_required_file
+      stat: path=/var/run/reboot-required get_md5=no
+      tags: [system]
+
+    - name: Reboot the Debian or Ubuntu server
+      reboot:
+        msg: "Reboot initiated by Ansible due to kernel updates"
+        connect_timeout: 5
+        reboot_timeout: 300
+        pre_reboot_delay: 0
+        post_reboot_delay: 30
+        test_command: uptime
+      when: reboot_required_file.stat.exists
+      tags: [system]
+
+    - name: Install DigitalOcean repo key
+      apt_key:
+        url: https://repos.sonar.digitalocean.com/sonar-agent.asc
+        state: present
+      tags: [system]
+
+    - name: Install DigitalOcean apt repo
+      apt_repository:
+        repo: deb https://repos.sonar.digitalocean.com/apt main main
+        state: present
+      tags: [system]
+
+    - name: Install system packages
+      action: apt name={{item}} state=latest
+      with_items:
+        - do-agent
+        - git
+        - mcrypt
+        - net-tools
+        - nginx
+      tags: [system]
+
+  tasks:
+    ################################################################################
+    # Install and configure php                                                    #
+    ################################################################################
+    - name: PHP Setup
+      vars:
+        php_default_version_debian: 8.0
+        php_webserver_daemon: "nginx"
+        php_memory_limit: "128M"
+        php_max_execution_time: "90"
+        php_post_max_size: "32M"
+        php_upload_max_filesize: "32M"
+        php_packages:
+          - php
+          - php-cli
+          - php-curl
+          - php-dom
+          - php-exif
+          - php-fileinfo
+          - php-fpm
+          - php-imagick
+          - php-intl
+          - php-json
+          - php-mbstring
+          - php-mysql
+          - php-xml
+          - php-zip
+      include_role:
+        name: geerlingguy.php
+        apply:
+          tags: [php]
+      tags: [php]
+
+    - name: Remove apache2
+      action: apt pkg={{item}} state=absent purge=yes
+      with_items:
+        - apache2
+        - apache2-bin
+        - apache2-data
+        - apache2-utils
+      tags: [nginx, apache2]
+
+    ################################################################################
+    # SSL keys for NGINX Configuration                                             #
+    ################################################################################
+    - name: Create key pair for the server
+      openssl_privatekey:
+        path: "/etc/ssl/private/nginx-selfsigned.pem"
+        size: 2048
+      tags: [nginx, ssl]
+
+    - name: Create certificate signing request
+      openssl_csr:
+        country_name: "{{ country_name }}"
+        email_address: "{{ email_address }}"
+        organization_name: "{{ organization_name }}"
+        common_name: "{{ common_name }}"
+        path: "/etc/ssl/private/nginx-selfsigned.csr"
+        privatekey_path: "/etc/ssl/private/nginx-selfsigned.pem"
+      tags: [nginx, ssl]
+
+    - name: Create self-signed certificate
+      openssl_certificate:
+        csr_path: /etc/ssl/private/nginx-selfsigned.csr
+        path: /etc/ssl/certs/nginx-selfsigned.crt
+        provider: selfsigned
+        privatekey_path: /etc/ssl/private/nginx-selfsigned.pem
+      tags: [nginx, ssl]
+
+    - name: Generate Diffie-Hellman parameters with the default size (4096 bits)
+      openssl_dhparam:
+        path: /etc/nginx/dhparams.pem
+      tags: [nginx, ssl]
+
+    ################################################################################
+    # NGINX Configuration                                                          #
+    ################################################################################
+    - name: Create /var/backups directory
+      file:
+        path: /var/backups
+        state: directory
+      tags: [system]
+
+    - name: Make a backup of /etc/nginx
+      command: cp -R /etc/nginx /var/backups/nginx
+      args:
+        chdir: /var/backups
+        creates: /var/backups/nginx
+      tags: [nginx]
+
+    - name: Create /etc/nginx directory and subdirs
+      file:
+        path: /etc/{{ item }}
+        state: directory
+      with_items:
+        - nginx/
+        - nginx/sites-available/
+        - nginx/sites-enabled/
+      tags: [nginx]
+
+    - name: Copy nginx config files to /etc/nginx
+      copy:
+        src: ./files/nginx/{{ item }}
+        dest: /etc/nginx/{{ item }}
+      with_items:
+        - nginx.conf
+        - mime.types
+        - fastcgi.conf
+        - fastcgi_params
+      tags: [nginx]
+
+    - name: Copy scripts directory to /etc/nginx
+      copy:
+        src: ./files/nginx/scripts/
+        dest: /etc/nginx/scripts/
+      tags: [nginx]
+
+    - name: Copy globals directory to /etc/nginx
+      copy:
+        src: ./files/nginx/globals/
+        dest: /etc/nginx/globals/
+      tags: [nginx]
+
+    - name: Copy conf.d directory to /etc/nginx
+      copy:
+        src: ./files/nginx/conf.d/
+        dest: /etc/nginx/conf.d/
+        directory_mode: yes
+      tags: [nginx]
+
+    - name: Sets Nginx conf file
+      template:
+        src: "./files/nginx/vhost.conf.j2"
+        dest: "/etc/nginx/sites-available/{{ item.name }}"
+      loop: "{{ sites }}"
+      tags: [nginx, test]
+
+    - name: Enables new site
+      file:
+        src: "/etc/nginx/sites-available/{{ item.name }}"
+        dest: "/etc/nginx/sites-enabled/{{ item.name }}"
+        state: link
+      loop: "{{ sites }}"
+      notify: Reload Nginx
+      tags: [nginx]
+
+    - name: Removes "default" site
+      file:
+        path: "/etc/nginx/sites-enabled/default"
+        state: absent
+      notify: Reload Nginx
+      tags: [nginx]
+
+    ################################################################################
+    # WordPress Configuration                                                      #
+    ################################################################################
+    - name: Create required directories
+      file:
+        path: "/var/www/{{ item.name }}"
+        state: directory
+        owner: "www-data"
+        group: "www-data"
+        mode: "0755"
+      loop: "{{ sites }}"
+      tags: [wordpress]
+
+    - name: Download and unpack latest WordPress
+      unarchive:
+        src: https://wordpress.org/latest.tar.gz
+        dest: "/var/www/{{ item.name }}"
+        creates: "/var/www/{{ item.name }}/wordpress"
+        remote_src: yes
+        list_files: yes
+      loop: "{{ sites }}"
+      tags: [wordpress]
+
+    - name: Set up wp-config
+      template:
+        src: "files/wp-config.php.j2"
+        dest: "/var/www/{{ item.name }}/wordpress/wp-config.php"
+      loop: "{{ sites }}"
+      tags: [wordpress, wp-config]
+
+    - name: Set ownership
+      file:
+        path: "/var/www/{{ item.name }}"
+        state: directory
+        recurse: yes
+        owner: www-data
+        group: www-data
+      loop: "{{ sites }}"
+      tags: [wordpress]
+
+    - name: Set permissions for directories
+      shell: "/usr/bin/find /var/www/{{ item.name }}/ -type d -exec chmod 750 {} \\;"
+      loop: "{{ sites }}"
+      tags: [wordpress]
+
+    - name: Set permissions for files
+      shell: "/usr/bin/find /var/www/{{ item.name }}/ -type f -exec chmod 640 {} \\;"
+      loop: "{{ sites }}"
+      tags: [wordpress]
+
+    - name: Restart Nginx and php
+      command: echo "restarts"
+      notify:
+        - Restart PHP-FPM
+        - Restart Nginx
+
+  handlers:
+    - name: Restart PHP-FPM
+      service:
+        name: php8.0-fpm
+        state: restarted
+
+    - name: Reload Nginx
+      service:
+        name: nginx
+        state: reloaded
+
+    - name: Restart Nginx
+      service:
+        name: nginx
+        state: restarted

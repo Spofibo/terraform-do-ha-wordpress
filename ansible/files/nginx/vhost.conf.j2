@@ -1,0 +1,51 @@
+# http => https
+server {
+    listen 80;
+    listen [::]:80; # IPv6 support
+    server_name {{ item.name }};
+
+    root /var/www/{{ item.name }}/wordpress;
+
+    location / {
+        return 301 https://$host$request_uri;
+        include 'globals/hsts.conf';
+        include 'globals/security-headers.conf';
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2; # IPv6 support
+    server_name {{ item.name }};
+
+    ssl_certificate /etc/ssl/certs/nginx-selfsigned.crt;
+    ssl_certificate_key /etc/ssl/private/nginx-selfsigned.pem;
+
+    root /var/www/{{ item.name }}/wordpress;
+    index index.php index.html;
+
+    access_log /var/log/nginx/{{ item.name }}-access.log;
+    error_log /var/log/nginx/{{ item.name }}-error.log;
+
+    include globals/restrictions.conf;
+    include globals/assets.conf;
+    include globals/auto-versioning-support.conf;
+
+     location ~ \.php$ {
+        fastcgi_split_path_info ^(.+\.php)(/.*)$;
+        if (!-f $document_root$fastcgi_script_name) { return 404; }
+
+        # Mitigate https://httpoxy.org/ vulnerabilities
+        fastcgi_param HTTP_PROXY "";
+
+        include "fastcgi_params";
+        fastcgi_param  SCRIPT_FILENAME    $document_root$fastcgi_script_name;
+        fastcgi_index               index.php;
+        fastcgi_pass                fpm;
+
+        include "globals/hsts.conf";
+        include "globals/security-headers.conf";
+    }
+
+    # include "globals/wp-fastest-cache.conf";  # WP Fastest Cache plugin support
+}
