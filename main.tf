@@ -1,13 +1,17 @@
 terraform {
   required_version = ">= 1.0.0"
 
-  backend "remote" {
-    organization = "w0rldart"
+  ################################################################################
+  # Option for Terraform Cloud backend, but you'll need to configure its         #
+  # execution to run locally in order to work with tfvars                        #
+  ################################################################################
+  # backend "remote" {
+  #   organization = "w0rldart"
 
-    workspaces {
-      name = "github"
-    }
-  }
+  #   workspaces {
+  #     name = "github"
+  #   }
+  # }
 
   required_providers {
     digitalocean = {
