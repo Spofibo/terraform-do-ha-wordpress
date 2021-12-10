@@ -4,5 +4,5 @@
 resource "digitalocean_vpc" "this" {
   name     = "${var.name_prefix}-network"
   region   = var.region
-  ip_range = "10.10.10.0/24"
+  ip_range = "10.0.0.0/24"
 }
