@@ -132,6 +132,27 @@ $ terraform destroy
 
 This will delete everything we've setup. Or, you could build upon this configuration to deploy your own web site or application! Read on for suggestions of further resources that might help.
 
+## TODO
+- Move this list to GH issues
+- README
+  - Refine docs
+  - Add architecture diagram
+- Terraform
+  - Combine with Packer to build hardened images ans use them as base
+- Ansible
+  - Cron for cloudflare script
+  - Valid self-signed ssl cert for Nginx
+  - NFS for wp-content to be shared between droplets
+    - How to address scaling up and down, in regards to the registration/deregistration of nodes?
+  - Install & use wp-cli to install sites
+  - Move sections from playbook to their individual roles
+  - Simplify PHP configuration by removing external dependency or disabling some parts of it (i.e. apache stuff)
+  - Create different linux user for each website
+- CI/CD (GH Actions) ?
+  - Separate into two envs (dev & prod)
+  - Build a hardened image from https://github.com/Spofibo/packer-build-hardened-images
+  - 
+
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
