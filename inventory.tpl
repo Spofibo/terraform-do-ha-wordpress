@@ -1,5 +1,6 @@
 [all:vars]
 sites=${sites}
+env=${env}
 
 [servers]
 %{ for index, server in servers }

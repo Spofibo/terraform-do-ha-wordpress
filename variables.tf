@@ -15,3 +15,8 @@ variable "name_prefix" {
 variable "ssh_fingerprint" {
   type = string
 }
+
+variable "env" {
+  type = string
+  default = "prod"
+}

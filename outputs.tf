@@ -33,6 +33,7 @@ output "wordpress_lb_ip" {
 resource "local_file" "ansible_inventory" {
   filename = "${path.module}/ansible-wordpress/inventory"
   content = templatefile("inventory.tpl", {
+    env = var.env
     sites   = jsonencode(local.sites),
     servers = digitalocean_droplet.wordpress
   })
