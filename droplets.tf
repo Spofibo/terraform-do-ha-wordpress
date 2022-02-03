@@ -3,7 +3,7 @@
 ################################################################################
 resource "digitalocean_droplet" "wordpress" {
   count    = 2
-  image    = "ubuntu-21-10-x64"
+  image    = "ubuntu-20-04-x64"
   name     = "${var.name_prefix}-wordpress-${count.index}"
   region   = var.region
   size     = "s-1vcpu-1gb"
